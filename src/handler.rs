@@ -148,6 +148,8 @@ fn process_typing(
     if handled {
         state.set_last_char(new_char);
         return true;
+    } else {
+        state.set_last_char(Some(key_id));
     }
 
     false
