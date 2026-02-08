@@ -58,6 +58,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupManagers()
         setupMenu()
         
+        // Check accessibility permissions
+        if !checkAccessibilityPermissions() {
+            showAccessibilityAlert()
+        }
+        
         layoutManager.refreshLayoutsMenu()
         engineManager.start()
     }
@@ -158,6 +163,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         engineManager.stop()
         NSApplication.shared.terminate(nil)
     }
+    
+    private func checkAccessibilityPermissions() -> Bool {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
+        return AXIsProcessTrustedWithOptions(options as CFDictionary)
+    }
+    
+    private func showAccessibilityAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Accessibility Permission Required"
+        alert.informativeText = """
+        OpenLipi needs Accessibility permissions to function.
+        
+        Please:
+        1. Open System Settings → Privacy & Security → Accessibility
+        2. Click the lock to make changes
+        3. Add OpenLipi to the list and enable it
+        4. Restart OpenLipi
+        """
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "OK")
+        
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        }
+    }
 }
 
 // MARK: - Engine Manager
@@ -166,14 +197,25 @@ class EngineManager {
     private var isMappingEnabled = true
     var onStatusChange: ((Bool, Bool) -> Void)?
     
+    private func log(_ message: String) {
+        let timestamp = Date()
+        let logMessage = "[\(timestamp)] \(message)\n"
+        print(logMessage)
+    }
+    
     private let userDefaults = UserDefaults.standard
     private let binaryPathKey = "openlipi.binaryPath"
     private let lastLayoutKey = "openlipi.lastLayout"
     
     func start() {
-        if let proc = process, proc.isRunning { return }
+        log("=== Starting OpenLipi Engine ===")
+        if let proc = process, proc.isRunning { 
+            log("Process already running, skipping start")
+            return 
+        }
         
         guard let binary = getBinaryPath() else {
+            log("ERROR: No binary path configured")
             showAlert("Select the OpenLipi binary first.")
             return
         }
@@ -223,36 +265,50 @@ class EngineManager {
         do {
             try proc.run()
             process = proc
-            print("Process started with PID: \(proc.processIdentifier)")
+            let pid = proc.processIdentifier
+            print("Process started with PID: \(pid)")
+            log("Process started successfully with PID: \(pid)")
+            log("Binary: \(binary)")
+            log("Layout: \(layout)")
             notifyStatusChange(running: true)
             monitorOutput(pipe: pipe)
         } catch {
+            log("ERROR: Failed to start process - \(error.localizedDescription)")
             showAlert("Failed to start: \(error.localizedDescription)")
             print("Error starting process: \(error)")
         }
     }
     
     func stop() {
-        guard let proc = process else { return }
+        guard let proc = process else { 
+            log("Stop called but no process running")
+            return 
+        }
         
         let pid = proc.processIdentifier
+        log("Stopping process PID: \(pid)")
         
         if proc.isRunning {
             // Try graceful termination
             proc.terminate()
+            log("Sent SIGTERM to process")
             
             // Wait briefly for graceful shutdown
             usleep(200_000) // 200ms
             
             // Force kill if still running
             if proc.isRunning {
+                log("Process still running, sending SIGKILL")
                 kill(pid, SIGKILL)
                 usleep(100_000) // 100ms to ensure it's dead
+            } else {
+                log("Process terminated gracefully")
             }
         }
         
         process = nil
         notifyStatusChange(running: false)
+        log("=== Engine Stopped ===")
     }
     
     func restart() {
@@ -293,6 +349,7 @@ class EngineManager {
             if data.isEmpty { return }
             
             if let output = String(data: data, encoding: .utf8) {
+                self?.log("[RUST OUTPUT] \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
                 self?.parseOutput(output)
             }
         }

@@ -40,8 +40,14 @@ cp "$MACOS_DIR/icons/icon_off_dark.png" "$RESOURCES_DIR/icon_off_dark.png"
 swiftc -parse-as-library "$MACOS_DIR/OpenLipiMenuBar.swift" -o "$APP_MACOS_DIR/$APP_NAME" \
   -framework Cocoa
 
+# Make executable
+chmod +x "$APP_MACOS_DIR/$APP_NAME"
+
 # Copy Info.plist
 cp "$MACOS_DIR/Info.plist" "$CONTENTS_DIR/Info.plist"
+
+# Code sign the app (ad-hoc signature to prevent "corrupted" error)
+codesign --force --deep --sign - "$APP_DIR"
 
 echo "App built at: $APP_DIR"
 
