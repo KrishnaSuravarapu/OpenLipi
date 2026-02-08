@@ -1,0 +1,17 @@
+[package]
+name = "OpenLipi"
+version = "0.1.0"
+edition = "2021"
+authors = ["Krishna Suravarapu"]
+description = "A keyboard layout engine for Indian languages"
+license = "MIT"
+repository = "https://github.com/KrishnaSuravarapu/OpenLipi"
+keywords = ["keyboard", "layout", "indian-languages", "macos"]
+categories = ["internationalization"]
+
+[dependencies]
+rdev = { version = "0.5.3", features = ["unstable_grab"] }
+enigo = { version = "0.2.0" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+lazy_static = "1.4.0"

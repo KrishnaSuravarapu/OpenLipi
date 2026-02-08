@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenLipi Layout",
+  "type": "object",
+  "required": ["layout_name", "mappings"],
+  "properties": {
+    "layout_name": { "type": "string" },
+    "mappings": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "special_rules": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "consonants": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "matra_map": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}
