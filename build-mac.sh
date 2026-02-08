@@ -38,6 +38,7 @@ cp "$MACOS_DIR/icons/icon_off_dark.png" "$RESOURCES_DIR/icon_off_dark.png"
 
 # Compile Swift source
 swiftc -parse-as-library "$MACOS_DIR/OpenLipiMenuBar.swift" -o "$APP_MACOS_DIR/$APP_NAME" \
+  -target arm64-apple-macos11.0 \
   -framework Cocoa
 
 # Make executable
@@ -55,7 +56,7 @@ echo "App built at: $APP_DIR"
 echo ""
 echo "📦 Creating DMG installer..."
 VERSION="0.1.0"
-DMG_NAME="${APP_NAME}-v${VERSION}-macos"
+DMG_NAME="${APP_NAME}-v${VERSION}-darwin-arm64"
 DMG_DIR="$BUILD_DIR/dmg"
 FINAL_DMG="$BUILD_DIR/${DMG_NAME}.dmg"
 
