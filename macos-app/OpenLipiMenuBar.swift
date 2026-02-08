@@ -9,12 +9,35 @@ struct OpenLipiMenuBarApp {
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
+        
+        // Setup signal handlers to kill binary on unexpected termination
+        setupSignalHandlers()
+        
         app.run()
+    }
+    
+    static func setupSignalHandlers() {
+        // Handle SIGTERM (normal termination)
+        signal(SIGTERM) { _ in
+            AppDelegate.shared?.cleanupAndExit()
+        }
+        
+        // Handle SIGINT (Ctrl+C)
+        signal(SIGINT) { _ in
+            AppDelegate.shared?.cleanupAndExit()
+        }
+        
+        // Handle SIGHUP (terminal hangup)
+        signal(SIGHUP) { _ in
+            AppDelegate.shared?.cleanupAndExit()
+        }
     }
 }
 
 // MARK: - App Delegate
 class AppDelegate: NSObject, NSApplicationDelegate {
+    static weak var shared: AppDelegate?
+    
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
     private var layoutsMenu: NSMenu!
@@ -24,6 +47,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var engineManager: EngineManager!
     private var layoutManager: LayoutManager!
     private var statusBarManager: StatusBarManager!
+    
+    override init() {
+        super.init()
+        AppDelegate.shared = self
+    }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
@@ -35,7 +63,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationWillTerminate(_ notification: Notification) {
-        engineManager.stop()
+        cleanupAndExit()
+    }
+    
+    func cleanupAndExit() {
+        engineManager?.stop()
+        exit(0)
     }
     
     deinit {
@@ -59,6 +92,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.statusBarManager.updateStatus(running: running, enabled: enabled)
             self?.updateStatusMenuItem(running: running, enabled: enabled)
             self?.updatePauseMenuItem(enabled: enabled)
+        }
+        
+        layoutManager.onBinaryChanged = { [weak self] in
+            self?.engineManager.restart()
+        }
+        
+        layoutManager.onLayoutsFolderChanged = { [weak self] in
+            self?.layoutManager.refreshLayoutsMenu()
+            self?.engineManager.restart()
         }
     }
     
@@ -138,6 +180,22 @@ class EngineManager {
             return
         }
         
+        // Debug logging
+        print("Binary path: \(binary)")
+        print("Layout path: \(layout)")
+        
+        // Verify binary exists and is executable
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: binary) else {
+            showAlert("Binary not found at: \(binary)")
+            return
+        }
+        
+        guard fileManager.isExecutableFile(atPath: binary) else {
+            showAlert("Binary is not executable. Try: chmod +x \(binary)")
+            return
+        }
+        
         // Save layout if not already saved
         if userDefaults.string(forKey: lastLayoutKey) == nil {
             userDefaults.set(layout, forKey: lastLayoutKey)
@@ -161,39 +219,44 @@ class EngineManager {
         do {
             try proc.run()
             process = proc
+            print("Process started with PID: \(proc.processIdentifier)")
             notifyStatusChange(running: true)
             monitorOutput(pipe: pipe)
         } catch {
             showAlert("Failed to start: \(error.localizedDescription)")
+            print("Error starting process: \(error)")
         }
     }
     
     func stop() {
         guard let proc = process else { return }
         
-        // Close the pipe first to stop monitoring
+        let pid = proc.processIdentifier
+        
         if proc.isRunning {
-            // Try graceful termination first
+            // Try graceful termination
             proc.terminate()
             
-            // Wait a bit for graceful shutdown
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { [weak proc] in
-                // If still running, force kill
-                if let p = proc, p.isRunning {
-                    p.interrupt()
-                    
-                    // Last resort: force kill via signal
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { [weak p] in
-                        if let process = p, process.isRunning {
-                            kill(process.processIdentifier, SIGKILL)
-                        }
-                    }
-                }
+            // Wait briefly for graceful shutdown
+            usleep(200_000) // 200ms
+            
+            // Force kill if still running
+            if proc.isRunning {
+                kill(pid, SIGKILL)
+                usleep(100_000) // 100ms to ensure it's dead
             }
         }
         
         process = nil
         notifyStatusChange(running: false)
+    }
+    
+    func restart() {
+        stop()
+        // Small delay to ensure cleanup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.start()
+        }
     }
     
     deinit {
@@ -269,6 +332,8 @@ class EngineManager {
 // MARK: - Layout Manager
 class LayoutManager {
     var layoutsMenu: NSMenu?
+    var onBinaryChanged: (() -> Void)?
+    var onLayoutsFolderChanged: (() -> Void)?
     
     private let userDefaults = UserDefaults.standard
     private let layoutsDirKey = "openlipi.layoutsDir"
@@ -340,6 +405,7 @@ class LayoutManager {
         panel.begin { response in
             if response == .OK, let url = panel.url {
                 self.userDefaults.set(url.path, forKey: "openlipi.binaryPath")
+                self.onBinaryChanged?()
             }
         }
     }
@@ -353,6 +419,7 @@ class LayoutManager {
         panel.begin { response in
             if response == .OK, let url = panel.url {
                 self.userDefaults.set(url.path, forKey: self.layoutsDirKey)
+                self.onLayoutsFolderChanged?()
                 completion?()
             }
         }
