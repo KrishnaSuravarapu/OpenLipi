@@ -102,6 +102,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.layoutManager.refreshLayoutsMenu()
             self?.engineManager.restart()
         }
+        
+        layoutManager.onLayoutChanged = { [weak self] in
+            self?.engineManager.restart()
+        }
     }
     
     private func setupMenu() {
@@ -334,6 +338,7 @@ class LayoutManager {
     var layoutsMenu: NSMenu?
     var onBinaryChanged: (() -> Void)?
     var onLayoutsFolderChanged: (() -> Void)?
+    var onLayoutChanged: (() -> Void)?
     
     private let userDefaults = UserDefaults.standard
     private let layoutsDirKey = "openlipi.layoutsDir"
@@ -344,7 +349,9 @@ class LayoutManager {
         menu.removeAllItems()
         
         guard let dir = Self.getLayoutsDir() else {
-            menu.addItem(withTitle: "Set layouts folder…", action: #selector(selectLayoutsFolderMenuItem(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: "Set layouts folder…", action: #selector(selectLayoutsFolderMenuItem(_:)), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
             return
         }
         
@@ -377,6 +384,7 @@ class LayoutManager {
             for file in files.sorted() where file.hasSuffix(".json") {
                 let name = file.replacingOccurrences(of: ".json", with: "")
                 let item = NSMenuItem(title: name, action: #selector(selectLayout(_:)), keyEquivalent: "")
+                item.target = self
                 let fullPath = (langPath as NSString).appendingPathComponent(file)
                 item.representedObject = fullPath
                 
@@ -419,6 +427,8 @@ class LayoutManager {
         panel.begin { response in
             if response == .OK, let url = panel.url {
                 self.userDefaults.set(url.path, forKey: self.layoutsDirKey)
+                // Clear last layout since the folder changed
+                self.userDefaults.removeObject(forKey: self.lastLayoutKey)
                 self.onLayoutsFolderChanged?()
                 completion?()
             }
@@ -435,6 +445,7 @@ class LayoutManager {
         guard let path = sender.representedObject as? String else { return }
         userDefaults.set(path, forKey: lastLayoutKey)
         refreshLayoutsMenu()
+        onLayoutChanged?()
     }
     
     static func getLayoutsDir() -> String? {
