@@ -61,6 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Check accessibility permissions
         if !checkAccessibilityPermissions() {
             showAccessibilityAlert()
+            exit(1)
         }
         
         layoutManager.refreshLayoutsMenu()
